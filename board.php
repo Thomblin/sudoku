@@ -35,16 +35,20 @@ class Board
     /**
      * @param int $range
      */
-    public function __construct($range = 9)
+    public function __construct($range = 9, $debug = false)
     {
         $this->range = $range;
 
         $wrap = sqrt($this->range);
 
-        $self = $this;
-        $callback = function () use($self) {
-            $self->cleanPrint();
-        };
+        if ( $debug ) {
+            $self = $this;
+            $callback = function () use($self) {
+                $self->debugPrint();
+            };
+        } else {
+            $callback = function () {};
+        }
 
         for ($i = 1; $i <= $range; ++$i) {
             $this->groups["x_{$i}"] = new Group($range, $callback);
@@ -75,63 +79,45 @@ class Board
     /**
      * clear screen and print this board
      */
-    public function cleanPrint($level = 0)
+    public function cleanPrint()
+    {
+        $out = (string)$this; // buffer to prevent flickering
+
+        passthru('clear');
+        echo $out;
+        usleep(1);
+    }
+
+    public function debugPrint()
     {
         static $best = 0, $buffer;
 
-        if ( $level > 2 ) {
-
-            $solved = $this->getSolvedCount();
-            if ( $best < $solved ) {
-                $buffer = (string) $this;
-                $best = $solved;
-            }
-
-            $output = (string)$this; // buffer to prevent flickering
-
-            $linesBuffer = explode("\n", $buffer);
-            $linesOutput = explode("\n", $output);
-
-            $rows = count($linesBuffer);
-
-            $out = '';
-            for ( $i = 0; $i < $rows; ++$i ) {
-                $out .= $linesOutput[$i] . '     ' . $linesBuffer[$i] . "\n";
-            }
-
-            passthru('clear');
-            echo $out;
-            usleep(1);
+        $solved = $this->getSolvedCount();
+        if ( $best < $solved ) {
+            $buffer = (string) $this;
+            $best = $solved;
         }
 
-        if ( $level > 1 ) {
-            echo implode('; ', $this->path) . "\n";
-            echo "[{$this->errors} / $solved / $best]\n";
+        $output = (string)$this; // buffer to prevent flickering
+
+        $linesBuffer = explode("\n", $buffer);
+        $linesOutput = explode("\n", $output);
+
+        $rows = count($linesBuffer);
+
+        $out = '';
+        for ( $i = 0; $i < $rows; ++$i ) {
+            $out .= $linesOutput[$i] . '     ' . $linesBuffer[$i] . "\n";
         }
-    }
 
-    /**
-     * @param int $value
-     */
-    public function deleteValue($value)
-    {
-        $this->cleanPrint();
-    }
+        passthru('clear');
+        echo $out;
+        usleep(1);
 
-    /**
-     * @param int $value
-     */
-    public function setValue($value)
-    {
-
-    }
-
-    /**
-     * @return int[]
-     */
-    public function getAllowedValues()
-    {
-        return array();
+        echo "execution path: " . implode('; ', $this->path) . "\n";
+        echo "errors: {$this->errors}\n";
+        echo "found numbers: $solved\n";
+        echo "best guess: $best\n";
     }
 
     /**
@@ -381,7 +367,7 @@ class Board
                         break 2;
                     }
 
-                } catch (Exception $e) {
+                } catch (RuntimeException $e) {
                     array_pop($this->path);
                     ++$this->errors;
                 }

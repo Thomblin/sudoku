@@ -66,7 +66,7 @@ class Group
     /**
      * @return Field
      *
-     * @throws Exception
+     * @throws RuntimeException
      */
     private function assertThatGroupIsValid()
     {
@@ -76,7 +76,7 @@ class Group
         }
 
         if ($this->range != count(array_unique($allowedValues))) {
-            throw new Exception('impossible group ' . print_r($allowedValues, true));
+            throw new RuntimeException('impossible group ' . print_r($allowedValues, true));
         }
     }
 

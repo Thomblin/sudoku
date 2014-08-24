@@ -79,7 +79,7 @@ class Field
             unset($this->allowedValues[$value]);
 
             if ( 0 === count($this->allowedValues) ) {
-                throw new Exception("no values left");
+                throw new RuntimeException("no values left");
             }
         }
     }
