@@ -3,7 +3,7 @@
 /**
  * Class Field represents one square on the sudoku board which has to be filled with a specific number
  */
-class Field implements FieldObserver
+class Field
 {
     /**
      * @var int
@@ -13,6 +13,10 @@ class Field implements FieldObserver
      * @var int[]
      */
     private $allowedValues;
+    /**
+     * @var int[]
+     */
+    private $snapshot;
     /**
      * @var Group[]
      */
@@ -45,8 +49,24 @@ class Field implements FieldObserver
     {
         $this->allowedValues = array($value => $value);
 
+        $this->sendDelete($value);
+        $this->sendCheck();
+    }
+
+    /**
+     * @param int $value
+     */
+    public function sendDelete($value)
+    {
         foreach ( $this->groups as $group ) {
-            $group->sendUpdate($this, $value);
+            $group->sendDelete($this, $value);
+        }
+    }
+
+    public function sendCheck()
+    {
+        foreach ( $this->groups as $group ) {
+            $group->sendCheck();
         }
     }
 
@@ -61,11 +81,23 @@ class Field implements FieldObserver
             if ( 0 === count($this->allowedValues) ) {
                 throw new Exception("no values left");
             }
-
-            if ( 1 === count($this->allowedValues) ) {
-                $this->setValue(current($this->allowedValues));
-            }
         }
+    }
+
+    /**
+     * @param string $name
+     */
+    public function createSnapshot($name)
+    {
+        $this->snapshot[$name] = $this->allowedValues;
+    }
+
+    /**
+     * @param string $name
+     */
+    public function rollback($name)
+    {
+        $this->allowedValues = $this->snapshot[$name];
     }
 
     /**
@@ -73,7 +105,7 @@ class Field implements FieldObserver
      */
     public function getColor()
     {
-        return 1 === count($this->allowedValues)
+        return $this->isSolved()
             ? 'green'
             : 'blue';
     }
@@ -90,7 +122,7 @@ class Field implements FieldObserver
         if (1 === count($this->allowedValues)) {
             $string = implode('', array_fill(1, $this->range, " "));
 
-            $string[(int)floor($this->range / 2)] = current($this->allowedValues);
+            $string[(int) floor($this->range / 2)] = current($this->allowedValues);
         } else {
             for ($number = 1; $number <= $this->range; ++$number) {
                 if (in_array($number, $this->allowedValues)) {
@@ -105,5 +137,21 @@ class Field implements FieldObserver
         }
 
         return $string;
+    }
+
+    /**
+     * @return bool
+     */
+    public function isSolved()
+    {
+        return 1 === count($this->allowedValues);
+    }
+
+    /**
+     * @return int[]
+     */
+    public function getAllowedValues()
+    {
+        return $this->allowedValues;
     }
 }

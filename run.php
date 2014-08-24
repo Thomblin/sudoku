@@ -1,7 +1,6 @@
 <?php
 
 require 'colors.php';
-require 'field_observer.php';
 require 'board.php';
 require 'field.php';
 require 'group.php';
@@ -17,7 +16,7 @@ if ( !file_exists($filename) ) {
     die("file '" . $filename . "' not found\n");
 }
 
-$board = new Board();
+$board = new Board(9);
 
 $sudoku = file_get_contents($filename);
 $rows = explode("\n", $sudoku);
@@ -37,7 +36,16 @@ try {
         }
     }
 
-    $board->cleanPrint();
+    if ( !$board->isSolved() ) {
+        $board->findSolution();
+    }
+
+    if ( !$board->isSolved() ) {
+        $board->guessSolution();
+    }
+
+    $board->cleanPrint(3);
+
 } catch ( Exception $e ) {
 
     $board->cleanPrint();

@@ -3,7 +3,7 @@
 /**
  * Class Board contains all sudoku Fields and observes all Field changes to trigger events between each Field
  */
-class Board implements FieldObserver
+class Board
 {
     const BOLD_LINE = '*';
     const VERICAL_LINE = '-';
@@ -23,6 +23,14 @@ class Board implements FieldObserver
      * @var Group[]
      */
     private $groups = array();
+    /**
+     * @var int[]
+     */
+    private $path = array();
+    /**
+     * @var int
+     */
+    private $errors = 0;
 
     /**
      * @param int $range
@@ -33,13 +41,15 @@ class Board implements FieldObserver
 
         $wrap = sqrt($this->range);
 
-        for ( $i = 1; $i <= $range; ++$i ) {
-            $this->groups["x_{$i}"] = new Group();
-            $this->groups["x_{$i}"]->addFieldObserver($this);
-            $this->groups["y_{$i}"] = new Group();
-            $this->groups["y_{$i}"]->addFieldObserver($this);
-            $this->groups["cell_{$i}"] = new Group();
-            $this->groups["cell_{$i}"]->addFieldObserver($this);
+        $self = $this;
+        $callback = function () use($self) {
+            $self->cleanPrint();
+        };
+
+        for ($i = 1; $i <= $range; ++$i) {
+            $this->groups["x_{$i}"] = new Group($range, $callback);
+            $this->groups["y_{$i}"] = new Group($range, $callback);
+            $this->groups["cell_{$i}"] = new Group($range, $callback);
         }
 
         for ($x = 1; $x <= $range; ++$x) {
@@ -55,19 +65,73 @@ class Board implements FieldObserver
                 $field->addGroup($this->groups["y_{$y}"]);
                 $field->addGroup($this->groups["cell_{$cell}"]);
 
-                $this->groups["x_{$x}"]->addFieldObserver($field);
-                $this->groups["y_{$y}"]->addFieldObserver($field);
-                $this->groups["cell_{$cell}"]->addFieldObserver($field);
+                $this->groups["x_{$x}"]->addField($field);
+                $this->groups["y_{$y}"]->addField($field);
+                $this->groups["cell_{$cell}"]->addField($field);
             }
         }
     }
+
+    /**
+     * clear screen and print this board
+     */
+    public function cleanPrint($level = 0)
+    {
+        static $best = 0, $buffer;
+
+        if ( $level > 2 ) {
+
+            $solved = $this->getSolvedCount();
+            if ( $best < $solved ) {
+                $buffer = (string) $this;
+                $best = $solved;
+            }
+
+            $output = (string)$this; // buffer to prevent flickering
+
+            $linesBuffer = explode("\n", $buffer);
+            $linesOutput = explode("\n", $output);
+
+            $rows = count($linesBuffer);
+
+            $out = '';
+            for ( $i = 0; $i < $rows; ++$i ) {
+                $out .= $linesOutput[$i] . '     ' . $linesBuffer[$i] . "\n";
+            }
+
+            passthru('clear');
+            echo $out;
+            usleep(1);
+        }
+
+        if ( $level > 1 ) {
+            echo implode('; ', $this->path) . "\n";
+            echo "[{$this->errors} / $solved / $best]\n";
+        }
+    }
+
     /**
      * @param int $value
      */
     public function deleteValue($value)
     {
         $this->cleanPrint();
-        usleep(10000);
+    }
+
+    /**
+     * @param int $value
+     */
+    public function setValue($value)
+    {
+
+    }
+
+    /**
+     * @return int[]
+     */
+    public function getAllowedValues()
+    {
+        return array();
     }
 
     /**
@@ -93,6 +157,11 @@ class Board implements FieldObserver
         return $this->fields[$x][$y];
     }
 
+    public function sendCheck($x, $y)
+    {
+        $this->getField($x, $y)->sendCheck();
+    }
+
     /**
      * @return string
      */
@@ -108,7 +177,7 @@ class Board implements FieldObserver
 
         for ($x = 1; $x <= $this->range; ++$x) {
             for ($y = 1; $y <= $this->range; ++$y) {
-                $values[$x][$y] = str_replace("\n", "", (string) $this->getField($x, $y));
+                $values[$x][$y] = str_replace("\n", "", (string)$this->getField($x, $y));
             }
         }
 
@@ -142,10 +211,10 @@ class Board implements FieldObserver
                     if (1 === $x % $wrap) {
                         $string .= implode('', array_fill(1, $this->range * $wrap + $this->range, self::BOLD_LINE));
                     } else {
-                        for ( $i = 0; $i < $wrap; ++$i ) {
+                        for ($i = 0; $i < $wrap; ++$i) {
                             $string .= implode(
                                     '',
-                                    array_fill(1, $this->range + $wrap -1, self::VERICAL_LINE)
+                                    array_fill(1, $this->range + $wrap - 1, self::VERICAL_LINE)
                                 ) . self::BOLD_LINE;
                         }
                     }
@@ -165,14 +234,171 @@ class Board implements FieldObserver
         return $string;
     }
 
-    /**
-     * clear screen and print this board
-     */
-    public function cleanPrint()
-    {
-        $output = (string) $this; // buffer to prevent flickering
 
-        passthru('clear');
-        echo $output;
+    public function findSolution()
+    {
+        foreach ( $this->groups as $group ) {
+            $group->findSingleValuesInGroup();
+        }
+    }
+
+    public function guessSolution($try = 1, $path = array())
+    {
+        if ( $this->isSolved() ) {
+            return;
+        }
+
+        $path = $this->setDebugInfo($try, $path);
+
+        $this->triggerSnapshot($try);
+
+        $guess = $this->getValuesToBeTested();
+
+        $this->setTestValue($try, $path, $guess);
+    }
+
+    /**
+     * @return bool
+     */
+    public function isSolved()
+    {
+        $solved = true;
+
+        for ($x = 1; $x <= $this->range; ++$x) {
+            for ($y = 1; $y <= $this->range; ++$y) {
+                if (!$this->getField($x, $y)->isSolved()) {
+                    $solved = false;
+                    break 2;
+                }
+            }
+        }
+
+        return $solved;
+    }
+
+    /**
+     * @return bool
+     */
+    public function getSolvedCount()
+    {
+        $count = 0;
+
+        for ($x = 1; $x <= $this->range; ++$x) {
+            for ($y = 1; $y <= $this->range; ++$y) {
+                if ($this->getField($x, $y)->isSolved()) {
+                    ++$count;
+                }
+            }
+        }
+
+        return $count;
+    }
+
+    /**
+     * @param int   $try
+     * @param array $path
+     *
+     * @return array
+     */
+    private function setDebugInfo($try, $path)
+    {
+        $path[] = $try;
+
+        $this->path = $path;
+
+        return $path;
+    }
+
+    /**
+     * @param $try
+     * @return array
+     */
+    private function triggerSnapshot($try)
+    {
+        for ($x = 1; $x <= $this->range; ++$x) {
+            for ($y = 1; $y <= $this->range; ++$y) {
+                $this->getField($x, $y)->createSnapshot($try);
+            }
+        }
+        return array($x, $y);
+    }
+
+    /**
+     * @return Field[]
+     */
+    private function getValuesToBeTested()
+    {
+        /** @var Field[] $guess */
+        $guess = array();
+
+        for ($x = 1; $x <= $this->range; ++$x) {
+            for ($y = 1; $y <= $this->range; ++$y) {
+                $field = $this->getField($x, $y);
+
+                if (!$field->isSolved()) {
+                    $guess[] = $field;
+                }
+            }
+        }
+
+        uasort($guess, function (Field $field1, Field $field2) {
+            $c1 = count($field1->getAllowedValues());
+            $c2 = count($field2->getAllowedValues());
+
+            if ($c1 === $c2) {
+                return 0;
+            }
+
+            return $c1 < $c2 ? -1 : 1;
+        });
+
+        return $guess;
+    }
+
+    /**
+     * @param int     $try
+     * @param array   $path
+     * @param Field[] $guess
+     */
+    private function setTestValue($try, $path, $guess)
+    {
+        foreach ($guess as $indexField => $field) {
+            foreach ($field->getAllowedValues() as $value) {
+                array_push($this->path, "[$indexField; $value]");
+                try {
+
+                    $field->setValue($value);
+
+                    if ($this->isSolved()) {
+                        break 2;
+                    }
+
+                    array_pop($this->path);
+
+                    $this->guessSolution($this->getNextTry(), $path);
+
+                    if ($this->isSolved()) {
+                        break 2;
+                    }
+
+                } catch (Exception $e) {
+                    array_pop($this->path);
+                    ++$this->errors;
+                }
+
+                for ($x = 1; $x <= $this->range; ++$x) {
+                    for ($y = 1; $y <= $this->range; ++$y) {
+                        $this->getField($x, $y)->rollback($try);
+                    }
+                }
+            }
+        }
+    }
+
+    private function getNextTry()
+    {
+        static $try = 1;
+
+        return ++$try;
     }
 }
